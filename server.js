@@ -1,52 +1,52 @@
-const express = require('express');
-const { Client } = require('pg');
 require('dotenv').config();
+const express = require('express');
+const { Pool } = require('pg');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
-app.use(express.json()); // Para lidar com JSON
-
-// Conexão com o banco de dados
-const client = new Client({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+// Criar pool de conexão com o PostgreSQL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Railway fornece essa variável automaticamente
+  ssl: { rejectUnauthorized: false } // Necessário para Railway
 });
 
-client.connect()
-  .then(() => console.log('Conectado ao banco de dados com sucesso!'))
-  .catch((err) => console.error('Erro de conexão', err));
+app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.send('API de Controle Financeiro');
+// Teste de conexão
+app.get('/', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.json({ message: 'API está rodando!', time: result.rows[0] });
+  } catch (err) {
+    console.error('Erro ao conectar ao banco de dados:', err);
+    res.status(500).json({ error: 'Erro ao conectar ao banco de dados' });
+  }
 });
 
 // Endpoint para adicionar um gasto
 app.post('/gastos', async (req, res) => {
   const { valor, data, referencia } = req.body;
   try {
-    const result = await client.query(
+    const result = await pool.query(
       'INSERT INTO public.gastos (valor, data, referencia) VALUES ($1, $2, $3) RETURNING *',
       [valor, data, referencia]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Erro ao adicionar gasto');
+    console.error('Erro ao adicionar gasto:', err);
+    res.status(500).json({ error: 'Erro ao adicionar gasto' });
   }
 });
 
 // Endpoint para listar os gastos
 app.get('/gastos', async (req, res) => {
   try {
-    const result = await client.query('SELECT * FROM public.gastos ORDER BY criado_em DESC');
+    const result = await pool.query('SELECT * FROM public.gastos ORDER BY data DESC');
     res.status(200).json(result.rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Erro ao listar gastos');
+    console.error('Erro ao listar gastos:', err);
+    res.status(500).json({ error: 'Erro ao listar gastos' });
   }
 });
 
@@ -54,17 +54,19 @@ app.get('/gastos', async (req, res) => {
 app.get('/gastos/filtrar', async (req, res) => {
   const { data_inicio, data_fim } = req.query;
   try {
-    const result = await client.query(
+    const result = await pool.query(
       'SELECT * FROM public.gastos WHERE data BETWEEN $1 AND $2 ORDER BY data DESC',
       [data_inicio, data_fim]
     );
     res.status(200).json(result.rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Erro ao filtrar gastos');
+    console.error('Erro ao filtrar gastos:', err);
+    res.status(500).json({ error: 'Erro ao filtrar gastos' });
   }
 });
 
+// Inicia o servidor
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
+
